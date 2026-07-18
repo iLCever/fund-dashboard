@@ -1,0 +1,20 @@
+{
+  "name": "fund-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:mock": "wrangler dev --var USE_MOCK_DATA:true",
+    "dev:cron": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "typescript": "latest",
+    "wrangler": "latest"
+  }
+}

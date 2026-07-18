@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#071426">
+    <meta name="description" content="个人基金盘中估算看板">
+    <title>基金估值看板</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">PERSONAL FUND DASHBOARD</p>
+          <h1>基金估值看板</h1>
+          <p class="subtitle">自选基金盘中估算，仅保存在当前浏览器</p>
+        </div>
+        <div class="connection-status" aria-live="polite">
+          <span id="connection-dot" class="status-dot"></span>
+          <span id="status-text">准备读取数据</span>
+        </div>
+      </header>
+
+      <section class="summary-row" aria-label="数据摘要">
+        <span>刷新 <strong id="updated-time">--</strong></span>
+        <span>正常 <strong id="success-count">0</strong></span>
+        <span>失败 <strong id="failed-count">0</strong></span>
+      </section>
+
+      <section class="add-panel" aria-label="添加基金">
+        <label for="fund-codes">基金代码</label>
+        <textarea id="fund-codes" rows="3" maxlength="209" placeholder="输入六位基金代码，多个代码用逗号、空格或回车分隔&#10;例如：012929, 024600"></textarea>
+        <div class="add-controls">
+          <div class="action-buttons">
+            <button id="add-fund-button" class="button primary-button" type="button">＋ 添加基金</button>
+            <button id="refresh-button" class="button secondary-button" type="button">刷新数据</button>
+            <button id="clear-button" class="button danger-button" type="button">一键清空</button>
+          </div>
+        </div>
+        <p id="add-message" class="add-message" role="status"></p>
+      </section>
+
+      <section class="toolbar" aria-label="基金筛选工具">
+        <label class="search-field" for="fund-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="fund-search" type="search" maxlength="64" placeholder="搜索名称、代码或主题" autocomplete="off">
+        </label>
+      </section>
+
+      <div id="stale-warning" class="warning" role="status" hidden>估值数据可能已过期，请谨慎参考。</div>
+      <div id="notice" class="notice" role="alert" hidden></div>
+
+      <section id="fund-sections" class="fund-sections" aria-label="基金估算列表">
+        <div class="empty-state">暂无基金，请输入基金代码开始监控</div>
+      </section>
+
+      <footer class="page-footer">
+        页面每 60 秒读取一次 Worker 数据。点击基金行可查看昨日净值、状态和删除操作。
+      </footer>
+    </main>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

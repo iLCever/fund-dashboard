@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+wrangler.jsonc
+worker-startup.cpuprofile
+.dev.vars
+.dev.vars.*
+.env
+dist/
+.superpowers/
+*.log
+.DS_Store
+Thumbs.db
