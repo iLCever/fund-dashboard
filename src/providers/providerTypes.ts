@@ -1,3 +1,5 @@
+import type { FundEstimate } from "../types";
+
 export interface FundProviderOptions {
   apiUrl: string;
   timeoutMs: number;
@@ -7,47 +9,7 @@ export interface FundProviderOptions {
 }
 
 export interface ProviderBatchResult {
-  funds: import("../types").FundEstimate[];
+  funds: FundEstimate[];
   dataSource: string;
   durationMs: number;
-}
-
-export interface EastmoneyFundEstimateResponse {
-  fundcode?: unknown;
-  name?: unknown;
-  jzrq?: unknown;
-  dwjz?: unknown;
-  gsz?: unknown;
-  gszzl?: unknown;
-  gztime?: unknown;
-}
-
-export interface EastmoneyOfficialNavItem {
-  FCODE?: unknown;
-  SHORTNAME?: unknown;
-  PDATE?: unknown;
-  NAV?: unknown;
-  NAVCHGRT?: unknown;
-}
-
-export interface EastmoneyOfficialNavResponse {
-  Datas?: unknown;
-  Success?: unknown;
-}
-
-export interface OfficialNavRecord {
-  code: string;
-  name: string;
-  officialNav: number;
-  officialChangePct: number | null;
-  navDate: string;
-}
-
-export interface FundThemeAnalysis {
-  code: string;
-  theme: string;
-  reportDate: string | null;
-  holdingsCount: number;
-  basis: string[];
-  analyzedAt: string;
 }

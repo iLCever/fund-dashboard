@@ -1,19 +1,19 @@
 # 基金估值看板
 
-一个部署在 Cloudflare Workers 免费版上的个人基金净值看板。Worker 统一请求第三方基金接口、标准化数据、分类排序、缓存快照并提供 API；浏览器只请求同源 Worker，不直接访问第三方接口。
+一个部署在 Cloudflare Workers 免费版上的个人基金盘中估值看板。Worker 统一请求新浪财经基金行情、标准化数据、分类排序、缓存快照并提供 API；浏览器只请求同源 Worker，不直接访问第三方接口。
 
 在线访问：<https://found.moxiao.ggff.net>
 
-> 天天基金已下线基金净值估算功能。当前生产模式展示最新正式净值和正式日涨跌幅，不再把不可用的盘中估算数据当作实时数据。
+> 盘中估值由第三方根据公开信息估算，不是基金管理人公布的正式净值；非当天数据会明确标记为历史估值。
 
 ## 功能
 
 - 基金配置集中在 `src/config.ts` 的 `FUND_LIST`。
-- 天天基金接口适配器集中在 `src/providers/fundProvider.ts`；生产模式使用批量正式净值接口，旧 `fundgz` JSONP 解析器仅保留为可替换适配代码。
-- 展示基金名称、代码、细分主题、正式日涨跌幅、最新正式净值、上一净值、净值日期和状态。
+- 新浪财经接口适配器集中在 `src/providers/fundProvider.ts`；生产模式通过一个批量请求获取全部自选基金估值。
+- 展示基金名称、代码、细分主题、估算涨幅、估算净值、参考净值、估值时间和状态。
 - 分类分组、分类内排名、涨幅升降序切换、名称/代码/分类搜索。
 - 单只基金失败不会影响其他基金；失败基金保留在结果中。
-- 最大并发数 5，每只请求默认超时 8 秒。
+- 新浪批量请求默认超时 8 秒，严格限制响应体大小并安全解析文本，不执行第三方脚本。
 - KV 快照缓存、300 秒新鲜度判断、60 秒刷新锁和旧缓存降级。
 - 每 5 分钟 Cron Trigger；仅在北京时间工作日 `09:30–11:30`、`13:00–15:00` 更新。
 - 强制刷新需要 Cloudflare Secret `REFRESH_TOKEN`。
@@ -138,10 +138,10 @@ REFRESH_TOKEN=your-local-refresh-token
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
 | `USE_MOCK_DATA` | `false` | `true` 时完全使用模拟数据 |
-| `FUND_API_URL` | 预留的单只基金适配 URL | 使用 `{code}` 作为基金代码占位符；当前生产数据链不调用已下线的 fundgz 地址 |
-| `FUND_API_TIMEOUT` | `8000` | 单只基金超时毫秒数，允许 1000–30000 |
+| `FUND_API_URL` | `https://hq.sinajs.cn/list={symbols}` | `{symbols}` 会替换为批量的 `fu_基金代码` |
+| `FUND_API_TIMEOUT` | `8000` | 新浪批量请求超时毫秒数，允许 1000–30000 |
 | `CACHE_TTL` | `300` | 快照新鲜时间秒数，允许 60–3600 |
-| `MAX_CONCURRENCY` | `5` | 第三方最大并发数，允许 1–5 |
+| `MAX_CONCURRENCY` | `5` | 为兼容旧配置保留；新浪批量模式不逐只并发请求 |
 
 ## 本地运行
 
@@ -299,7 +299,7 @@ npx wrangler secret put REFRESH_TOKEN
 
 确认 `wrangler.jsonc` 中绑定名为 `FUND_CACHE`。无绑定时 Worker 仍能运行，但页面访问会直接查询 Provider，且无法缓存。
 
-### 第三方接口不可用或返回 HTML
+### 新浪接口不可用、限流或返回 HTML
 
 查看 `npx wrangler tail`。单只失败会显示 `--`，不会让整个接口失败。可将 `USE_MOCK_DATA` 改为 `true` 验证页面和部署。
 
@@ -322,4 +322,4 @@ npm run typecheck
 
 ## 免费额度注意事项
 
-本项目按个人低频使用设计：静态资源优先由 Workers Static Assets 直接提供，API 才进入 Worker；第三方并发限制为 5，低于免费版同时外连限制。请关注 Cloudflare 当前免费额度、KV 写入额度和 Cron Trigger 数量。额度与规则可能调整，部署前以 Cloudflare 官方文档为准。
+本项目按个人低频使用设计：静态资源优先由 Workers Static Assets 直接提供，API 才进入 Worker；新浪估值采用单次批量请求，不会为每只基金分别建立连接。请关注 Cloudflare 当前免费额度、KV 写入额度和 Cron Trigger 数量。额度与规则可能调整，部署前以 Cloudflare官方文档为准。
