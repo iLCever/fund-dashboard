@@ -6,6 +6,27 @@
 
 > 盘中估值由第三方根据公开信息估算，不是基金管理人公布的正式净值；非当天数据会明确标记为历史估值。
 
+> **临时数据源说明：** 当前暂时使用新浪财经公开行情地址获取盘中估值。该地址没有面向本项目的稳定性承诺，可能出现限流、字段调整或停止服务；前端不会直接请求新浪，所有请求均由 Cloudflare Worker 转发和标准化。
+
+## 当前临时接口
+
+Worker 端暂时请求：
+
+```text
+GET https://hq.sinajs.cn/list=fu_001180,fu_161116
+Referer: https://finance.sina.com.cn/
+```
+
+项目配置使用批量占位符：
+
+```text
+https://hq.sinajs.cn/list={symbols}
+```
+
+`{symbols}` 会在 Worker 内转换为 `fu_基金代码` 列表。新浪返回的是 GBK 编码的 JavaScript 变量文本，不是 JSON；适配器只提取已校验的字段，不执行返回脚本。当前使用的字段为：基金名称、估值时间、估算净值、参考净值、估算涨幅和数据日期，其余未公开字段一律忽略。
+
+这是临时适配方案。以后更换正式供应商时，只需修改 `src/providers/fundProvider.ts`，前端和 `/api/funds` 的统一返回结构保持不变。
+
 ## 功能
 
 - 基金配置集中在 `src/config.ts` 的 `FUND_LIST`。
