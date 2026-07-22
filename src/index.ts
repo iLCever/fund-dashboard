@@ -1,6 +1,6 @@
 import { FUND_LIST } from "./config";
-import { DEFAULT_FUND_API_TIMEOUT, DEFAULT_FUND_API_URL, DEFAULT_MAX_CONCURRENCY, fetchFundEstimates } from "./providers/fundProvider";
-import type { FundProviderOptions } from "./providers/providerTypes";
+import { DEFAULT_FUND_API_TIMEOUT, DEFAULT_FUND_API_URL, DEFAULT_MAX_CONCURRENCY, fetchFundEstimates, fetchFundThemeFromHoldings } from "./providers/fundProvider";
+import type { FundProviderOptions, FundThemeAnalysis } from "./providers/providerTypes";
 import type { ApiResponse, FundEstimate, FundSnapshot, HealthData } from "./types";
 import {
   FUND_CACHE_KEY,
@@ -33,6 +33,10 @@ interface SnapshotResult {
   snapshot: FundSnapshot;
   cacheStatus: CacheStatus;
 }
+
+const THEME_CACHE_PREFIX = "fund_theme_v5:";
+const THEME_FRESH_SECONDS = 30 * 24 * 60 * 60;
+const THEME_STORAGE_SECONDS = 60 * 24 * 60 * 60;
 
 function categoryOrder(): string[] {
   return [...new Set(FUND_LIST.map((fund) => fund.category))];
@@ -230,6 +234,53 @@ async function handleCustomFunds(request: Request, env: Env): Promise<Response> 
   return jsonResponse({ success: true, message: "ok", data: { funds: batch.funds } });
 }
 
+function isThemeAnalysis(value: unknown): value is FundThemeAnalysis {
+  if (typeof value !== "object" || value === null) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.code === "string" && typeof item.theme === "string" &&
+    (item.reportDate === null || typeof item.reportDate === "string") &&
+    typeof item.holdingsCount === "number" && Array.isArray(item.basis) &&
+    item.basis.every((entry) => typeof entry === "string") && typeof item.analyzedAt === "string";
+}
+
+async function handleFundTheme(request: Request, env: Env): Promise<Response> {
+  const code = (new URL(request.url).searchParams.get("code") ?? "").trim();
+  if (!/^\d{6}$/.test(code)) return errorResponse("基金代码格式无效", 400);
+  const cache = cacheBinding(env);
+  const cacheKey = `${THEME_CACHE_PREFIX}${code}`;
+  if (cache) {
+    try {
+      const cached: unknown = await cache.get(cacheKey, "json");
+      if (isThemeAnalysis(cached)) {
+        const age = Date.now() - Date.parse(cached.analyzedAt);
+        if (Number.isFinite(age) && age >= 0 && age < THEME_FRESH_SECONDS * 1_000) {
+          return jsonResponse({ success: true, message: "ok", data: cached }, 200, { "x-fund-theme-cache": "HIT" });
+        }
+      }
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "theme_cache_read_failed", fundCode: code, error: error instanceof Error ? error.message : String(error) }));
+    }
+  }
+
+  try {
+    const timeoutMs = parseInteger(env.FUND_API_TIMEOUT, DEFAULT_FUND_API_TIMEOUT, 1_000, 30_000);
+    const analysis = await fetchFundThemeFromHoldings(code, timeoutMs);
+    if (cache) {
+      try {
+        await cache.put(cacheKey, JSON.stringify(analysis), { expirationTtl: THEME_STORAGE_SECONDS });
+      } catch (error) {
+        console.warn(JSON.stringify({ event: "theme_cache_write_failed", fundCode: code, error: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+    console.log(JSON.stringify({ event: "fund_theme_analyzed", fundCode: code, theme: analysis.theme, reportDate: analysis.reportDate, holdingsCount: analysis.holdingsCount }));
+    return jsonResponse({ success: true, message: "ok", data: analysis }, 200, { "x-fund-theme-cache": cache ? "MISS" : "BYPASS" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "持仓主题分析失败";
+    console.warn(JSON.stringify({ event: "fund_theme_failed", fundCode: code, error: message }));
+    return errorResponse(message, 502);
+  }
+}
+
 function methodNotAllowed(): Response {
   return jsonResponse({ success: false, message: "method not allowed", data: null }, 405, { allow: "GET" });
 }
@@ -247,6 +298,7 @@ export default {
       try {
         if (url.pathname === "/api/funds") return await handleFunds(request, env);
         if (url.pathname === "/api/custom-funds") return await handleCustomFunds(request, env);
+        if (url.pathname === "/api/fund-theme") return await handleFundTheme(request, env);
         if (url.pathname === "/api/health") return await handleHealth(env);
         return errorResponse("not found", 404);
       } catch (error) {

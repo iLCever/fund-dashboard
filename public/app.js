@@ -1,6 +1,9 @@
 const CUSTOM_FUNDS_STORAGE_KEY = "fund-dashboard:custom-funds:v1";
 const FUND_SNAPSHOT_STORAGE_KEY = "fund-dashboard:latest-snapshot:v1";
 const MAX_FUNDS = 30;
+const THEME_FRESH_MS = 30 * 24 * 60 * 60 * 1000;
+const THEME_RETRY_DELAY_MS = 30 * 60 * 1000;
+const THEME_SCHEMA_VERSION = 2;
 
 const elements = {
   addButton: document.querySelector("#add-fund-button"),
@@ -27,10 +30,15 @@ function readSavedFunds() {
     parsed.forEach((fund) => {
       if (/^\d{6}$/.test(fund?.code)) {
         const name = typeof fund.name === "string" ? fund.name : "";
+        const savedCategory = typeof fund.category === "string" ? fund.category.trim() : "";
+        const hasCurrentTheme = fund.themeVersion === THEME_SCHEMA_VERSION;
         unique.set(fund.code, {
           code: fund.code,
           name,
-          category: name ? inferFundCategory(name) : "识别中",
+          category: hasCurrentTheme && savedCategory ? savedCategory : (name ? inferFundCategory(name) : "识别中"),
+          themeUpdatedAt: hasCurrentTheme && typeof fund.themeUpdatedAt === "string" ? fund.themeUpdatedAt : null,
+          themeRetryAt: hasCurrentTheme && typeof fund.themeRetryAt === "string" ? fund.themeRetryAt : null,
+          themeVersion: hasCurrentTheme ? THEME_SCHEMA_VERSION : null,
         });
       }
     });
@@ -56,7 +64,7 @@ function readCachedSnapshot(savedFunds) {
       return [{
         code: saved.code,
         name: saved.name || fund.name || saved.code,
-        category: inferFundCategory(saved.name || fund.name || ""),
+        category: saved.category || (typeof fund.category === "string" ? fund.category : inferFundCategory(saved.name || fund.name || "")),
         estimatedNav: numberOrNull(fund.estimatedNav),
         estimatedChangePct: numberOrNull(fund.estimatedChangePct),
         previousNav: numberOrNull(fund.previousNav),
@@ -89,6 +97,7 @@ const state = {
   keyword: "",
   savedFunds: initialSavedFunds,
   sortDescending: true,
+  themeRefreshInFlight: new Set(),
   updatedAt: initialSnapshot.updatedAt,
 };
 
@@ -156,20 +165,20 @@ function statusLabel(fund) {
 
 function inferFundCategory(name) {
   const value = String(name || "").toLocaleUpperCase("zh-CN");
+  if (/CPO|光模块|光通信/.test(value)) return "CPO/光通信";
   if (/PCB|印制电路|电路板/.test(value)) return "PCB";
   if (/消费电子/.test(value)) return "消费电子";
+  if (/半导体设备/.test(value)) return "半导体设备";
   if (/半导体|芯片|集成电路/.test(value)) return "半导体";
-  if (/人工智能|\bAI\b/.test(value)) return "人工智能";
   if (/机器人/.test(value)) return "机器人";
-  if (/计算机|软件|信息技术|数字经济/.test(value)) return "数字科技";
   if (/通信|5G/.test(value)) return "通信";
-  if (/电子/.test(value)) return "电子";
-  if (/科技/.test(value)) return "科技";
   if (/新能源汽车|新能源车|智能汽车/.test(value)) return "新能源车";
+  if (/锂电设备/.test(value)) return "锂电设备";
+  if (/固态电池/.test(value)) return "固态电池";
   if (/光伏/.test(value)) return "光伏";
   if (/储能/.test(value)) return "储能";
-  if (/新能源/.test(value)) return "新能源";
-  if (/创新药|医药|医疗|生物/.test(value)) return "医药医疗";
+  if (/创新药/.test(value)) return "创新药";
+  if (/医疗器械/.test(value)) return "医疗器械";
   if (/白酒/.test(value)) return "白酒";
   if (/食品饮料/.test(value)) return "食品饮料";
   if (/消费/.test(value)) return "大消费";
@@ -190,11 +199,8 @@ function inferFundCategory(name) {
   if (/日经|日本/.test(value)) return "日本市场";
   if (/QDII|海外|全球/.test(value)) return "海外市场";
   if (/纯债|债券|短债|信用债|可转债|固收|债/.test(value)) return "债券";
-  if (/量化/.test(value)) return "量化";
-  if (/价值/.test(value)) return "价值";
-  if (/成长/.test(value)) return "成长";
   if (/ETF|指数|联接|中证|上证|沪深|创业板|科创/.test(value)) return "宽基指数";
-  return "综合主题";
+  return "识别中";
 }
 
 function compareFunds(left, right) {
@@ -386,6 +392,58 @@ async function readJson(response) {
   return body.data;
 }
 
+function themeIsFresh(fund) {
+  const updated = safeDate(fund.themeUpdatedAt);
+  return Boolean(fund.themeVersion === THEME_SCHEMA_VERSION && updated && Date.now() - updated.getTime() < THEME_FRESH_MS);
+}
+
+function themeCanRetry(fund) {
+  const retryAt = safeDate(fund.themeRetryAt);
+  return !retryAt || Date.now() >= retryAt.getTime();
+}
+
+async function refreshThemesIfNeeded() {
+  const pending = state.savedFunds.filter((fund) => inferFundCategory(fund.name) === "识别中" && !themeIsFresh(fund) && themeCanRetry(fund) && !state.themeRefreshInFlight.has(fund.code));
+  if (!pending.length) return;
+  let nextIndex = 0;
+  let changed = false;
+
+  async function worker() {
+    while (nextIndex < pending.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const saved = pending[index];
+      if (!saved) continue;
+      state.themeRefreshInFlight.add(saved.code);
+      try {
+        const response = await fetch(`/api/fund-theme?code=${encodeURIComponent(saved.code)}`, { headers: { accept: "application/json" } });
+        const analysis = await readJson(response);
+        if (typeof analysis?.theme === "string" && analysis.theme.trim()) {
+          saved.category = analysis.theme.trim();
+          saved.themeUpdatedAt = new Date().toISOString();
+          saved.themeRetryAt = null;
+          saved.themeVersion = THEME_SCHEMA_VERSION;
+          const displayed = state.funds.find((fund) => fund.code === saved.code);
+          if (displayed) displayed.category = saved.category;
+          changed = true;
+        }
+      } catch {
+        saved.themeRetryAt = new Date(Date.now() + THEME_RETRY_DELAY_MS).toISOString();
+        changed = true;
+      } finally {
+        state.themeRefreshInFlight.delete(saved.code);
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(3, pending.length) }, () => worker()));
+  if (changed) {
+    saveFunds();
+    saveFundSnapshot();
+    render();
+  }
+}
+
 async function loadFunds({ background = false } = {}) {
   if (!background) {
     setStatus("loading", "刷新中，请稍后");
@@ -406,10 +464,10 @@ async function loadFunds({ background = false } = {}) {
       const estimate = estimatesByCode.get(saved.code);
       if (!estimate) return { ...saved, name: saved.name || saved.code, estimatedNav: null, estimatedChangePct: null, previousNav: null, officialNav: null, officialChangePct: null, navDate: null, estimateTime: null, source: "--", status: "failed", error: "数据获取失败" };
       const name = estimate.name && estimate.name !== saved.code ? estimate.name : (saved.name || saved.code);
-      const category = inferFundCategory(name);
-      if (saved.name !== name || saved.category !== category) {
+      const category = themeIsFresh(saved) ? saved.category : inferFundCategory(name);
+      if (saved.name !== name || (!themeIsFresh(saved) && saved.category !== category)) {
         saved.name = name;
-        saved.category = category;
+        if (!themeIsFresh(saved)) saved.category = category;
         savedDataChanged = true;
       }
       return { ...estimate, name, category };
@@ -428,6 +486,7 @@ async function loadFunds({ background = false } = {}) {
     render();
     showNotice("");
     setStatus("online", "数据已刷新");
+    void refreshThemesIfNeeded();
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
     showNotice(`数据读取失败：${message}${state.funds.length ? "。已保留当前数据。" : "。"}`);

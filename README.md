@@ -1,6 +1,6 @@
 # 基金估值看板
 
-一个部署在 Cloudflare Workers 免费版上的个人基金盘中估值看板。Worker 统一请求新浪财经基金行情、标准化数据、分类排序、缓存快照并提供 API；浏览器只请求同源 Worker，不直接访问第三方接口。
+一个部署在 Cloudflare Workers 免费版上的个人基金盘中估值看板。Worker 统一请求新浪财经基金行情、标准化数据、分析公开持仓、缓存结果并提供 API；浏览器只请求同源 Worker，不直接访问第三方接口。
 
 在线访问：<https://found.moxiao.ggff.net>
 
@@ -32,7 +32,8 @@ https://hq.sinajs.cn/list={symbols}
 - 基金配置集中在 `src/config.ts` 的 `FUND_LIST`。
 - 新浪财经接口适配器集中在 `src/providers/fundProvider.ts`；生产模式通过一个批量请求获取全部自选基金估值。
 - 展示基金名称、代码、细分主题、估算涨幅、估算净值、参考净值、估值时间和状态。
-- 类别统一由当前前端版本根据基金名称重新推断，不再读取不同设备遗留的旧分类结果。
+- 名称明确的指数、黄金等基金直接分类；名称宽泛的基金由 Worker 根据最新公开前十大持仓分析为 CPO/光通信、PCB、半导体设备、固态电池等细分主题。
+- 持仓分析结果统一缓存到 Cloudflare KV 30 天，避免不同设备各自猜测，也避免频繁请求第三方持仓接口。
 - 分类分组、分类内排名、涨幅升降序切换、名称/代码/分类搜索。
 - 单只基金失败不会影响其他基金；失败基金保留在结果中。
 - 新浪批量请求默认超时 8 秒，严格限制响应体大小并安全解析文本，不执行第三方脚本。
@@ -239,6 +240,14 @@ GET /api/funds?refresh=1&token=你的密钥
 GET /api/health
 ```
 
+### 持仓主题分析
+
+```text
+GET /api/fund-theme?code=017811
+```
+
+该接口由前端在后台按需调用，估值数据仍来自新浪。持仓来自最近一期公开披露，并非实时仓位；结果按代码缓存在 KV 中。
+
 所有 API 使用统一响应：
 
 ```json
@@ -270,7 +279,7 @@ export const FUND_LIST = [
 ];
 ```
 
-分类完全由配置决定，前端按钮自动生成。基金代码必须是六位数字。
+`FUND_LIST` 用于部署级固定基金；网页中新增的自选基金保存在当前浏览器。基金代码必须是六位数字。细分主题优先根据公开持仓自动识别，不需要手工选择。
 
 ## 更换第三方接口
 
@@ -281,7 +290,7 @@ src/providers/fundProvider.ts
 src/providers/providerTypes.ts
 ```
 
-更换供应商时，修改 URL、请求和字段映射，仍输出 `src/types.ts` 中的 `FundEstimate`。前端和 API 不需要理解供应商字段。
+估值接口和持仓分析接口都集中在 `src/providers/fundProvider.ts`。更换供应商时修改 URL、请求和字段映射，仍输出统一类型，前端不需要理解供应商字段。
 
 ## 类型检查与构建验证
 
@@ -344,4 +353,4 @@ npm run typecheck
 
 ## 免费额度注意事项
 
-本项目按个人低频使用设计：静态资源优先由 Workers Static Assets 直接提供，API 才进入 Worker；新浪估值采用单次批量请求，不会为每只基金分别建立连接。请关注 Cloudflare 当前免费额度、KV 写入额度和 Cron Trigger 数量。额度与规则可能调整，部署前以 Cloudflare官方文档为准。
+本项目按个人低频使用设计：静态资源优先由 Workers Static Assets 直接提供，API 才进入 Worker；新浪估值采用单次批量请求，不会为每只基金分别建立连接。持仓主题成功分析后 30 天内直接读 KV，不会随每分钟净值刷新重复分析。请关注 Cloudflare 当前免费额度、KV 写入额度和 Cron Trigger 数量。额度与规则可能调整，部署前以 Cloudflare 官方文档为准。

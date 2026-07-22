@@ -13,3 +13,12 @@ export interface ProviderBatchResult {
   dataSource: string;
   durationMs: number;
 }
+
+export interface FundThemeAnalysis {
+  code: string;
+  theme: string;
+  reportDate: string | null;
+  holdingsCount: number;
+  basis: string[];
+  analyzedAt: string;
+}
