@@ -68,6 +68,7 @@ function readCachedSnapshot(savedFunds) {
         estimatedChangePct: numberOrNull(fund.estimatedChangePct),
         previousNav: numberOrNull(fund.previousNav),
         officialNav: numberOrNull(fund.officialNav),
+        officialChangePct: numberOrNull(fund.officialChangePct),
         navDate: typeof fund.navDate === "string" ? fund.navDate : null,
         estimateTime: typeof fund.estimateTime === "string" ? fund.estimateTime : null,
         source: typeof fund.source === "string" ? fund.source : "本地缓存",
@@ -135,6 +136,18 @@ function formatChange(value) {
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function displayedChange(fund) {
+  return numberOrNull(fund.estimatedChangePct) ?? numberOrNull(fund.officialChangePct);
+}
+
+function displayedNav(fund) {
+  return numberOrNull(fund.estimatedNav) ?? numberOrNull(fund.officialNav);
+}
+
+function isOfficialNavFallback(fund) {
+  return numberOrNull(fund.estimatedNav) === null && numberOrNull(fund.officialNav) !== null;
+}
+
 function beijingDateKey() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Shanghai",
@@ -156,9 +169,10 @@ function changeClass(value) {
   return value > 0 ? "change positive" : "change negative";
 }
 
-function statusLabel(status) {
-  if (status === "success") return "正常";
-  if (status === "stale") return "缓存数据";
+function statusLabel(fund) {
+  if (isOfficialNavFallback(fund)) return "正式净值";
+  if (fund.status === "success") return "正常";
+  if (fund.status === "stale") return "缓存数据";
   return "失败";
 }
 
@@ -206,8 +220,8 @@ function inferFundCategory(name) {
 }
 
 function compareFunds(left, right) {
-  const leftValue = left.estimatedChangePct;
-  const rightValue = right.estimatedChangePct;
+  const leftValue = displayedChange(left);
+  const rightValue = displayedChange(right);
   if (leftValue === null && rightValue === null) return left.code.localeCompare(right.code);
   if (leftValue === null) return 1;
   if (rightValue === null) return -1;
@@ -262,7 +276,7 @@ function createFundTable(funds) {
   table.className = "fund-table";
   const head = document.createElement("thead");
   const headRow = document.createElement("tr");
-  ["基金名称/代码", "估算涨幅", "估算净值"].forEach((label, index) => {
+  ["基金名称/代码", "涨跌幅", "最新净值"].forEach((label, index) => {
     const header = document.createElement("th");
     header.scope = "col";
     if (index === 1) {
@@ -300,6 +314,12 @@ function createFundTable(funds) {
       updatedBadge.textContent = "已更新";
       updatedBadge.title = "今日正式净值已更新";
       nameLine.append(updatedBadge);
+    } else if (isOfficialNavFallback(fund)) {
+      const officialBadge = document.createElement("span");
+      officialBadge.className = "nav-updated-badge";
+      officialBadge.textContent = "正式净值";
+      officialBadge.title = `净值日期：${fund.navDate || "--"}`;
+      nameLine.append(officialBadge);
     }
     const meta = document.createElement("span");
     meta.className = "fund-meta";
@@ -308,11 +328,12 @@ function createFundTable(funds) {
 
     const change = makeCell("change-cell");
     const changeBadge = document.createElement("span");
-    changeBadge.className = `change-badge ${changeClass(fund.estimatedChangePct)}`;
-    changeBadge.textContent = formatChange(fund.estimatedChangePct);
+    const changeValue = displayedChange(fund);
+    changeBadge.className = `change-badge ${changeClass(changeValue)}`;
+    changeBadge.textContent = formatChange(changeValue);
     change.append(changeBadge);
     const nav = makeCell("nav-value");
-    nav.textContent = formatNav(fund.estimatedNav);
+    nav.textContent = formatNav(displayedNav(fund));
     row.append(identity, change, nav);
 
     const detailRow = document.createElement("tr");
@@ -322,7 +343,7 @@ function createFundTable(funds) {
     detailCell.colSpan = 3;
     const details = document.createElement("div");
     details.className = "fund-details";
-    [["昨日净值", formatNav(fund.previousNav)], ["状态", statusLabel(fund.status)]].forEach(([label, value]) => {
+    [["上一净值", formatNav(fund.previousNav)], ["净值日期", fund.navDate || "--"], ["状态", statusLabel(fund)]].forEach(([label, value]) => {
       const item = document.createElement("div");
       item.className = "detail-item";
       const caption = document.createElement("span");
@@ -461,7 +482,7 @@ async function loadFunds({ background = false } = {}) {
     let savedDataChanged = false;
     state.funds = state.savedFunds.map((saved) => {
       const estimate = estimatesByCode.get(saved.code);
-      if (!estimate) return { ...saved, name: saved.name || saved.code, estimatedNav: null, estimatedChangePct: null, previousNav: null, estimateTime: null, source: "--", status: "failed", error: "数据获取失败" };
+      if (!estimate) return { ...saved, name: saved.name || saved.code, estimatedNav: null, estimatedChangePct: null, previousNav: null, officialNav: null, officialChangePct: null, navDate: null, estimateTime: null, source: "--", status: "failed", error: "数据获取失败" };
       const name = estimate.name && estimate.name !== saved.code ? estimate.name : (saved.name || saved.code);
       const category = themeIsFresh(saved) ? saved.category : inferFundCategory(name);
       if (saved.name !== name || (!themeIsFresh(saved) && saved.category !== category)) {
@@ -472,12 +493,20 @@ async function loadFunds({ background = false } = {}) {
       return { ...estimate, name, category };
     });
     if (savedDataChanged) saveFunds();
-    const times = state.funds.map((fund) => safeDate(fund.estimateTime)?.getTime()).filter(Number.isFinite);
+    const times = state.funds.map((fund) => {
+      const estimateTime = safeDate(fund.estimateTime)?.getTime();
+      if (Number.isFinite(estimateTime)) return estimateTime;
+      return /^\d{4}-\d{2}-\d{2}$/.test(fund.navDate || "")
+        ? Date.parse(`${fund.navDate}T15:00:00+08:00`)
+        : NaN;
+    }).filter(Number.isFinite);
     state.dataUpdatedAt = times.length ? new Date(Math.max(...times)).toISOString() : null;
     state.updatedAt = new Date().toISOString();
     saveFundSnapshot();
     render();
-    showNotice("");
+    showNotice(state.funds.some(isOfficialNavFallback)
+      ? "天天基金已下线盘中估算，当前显示最新正式净值和当日涨跌幅。"
+      : "");
     setStatus("online", "数据已刷新");
     void refreshThemesIfNeeded();
   } catch (error) {

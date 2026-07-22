@@ -20,6 +20,7 @@ function failedEstimate(fund: FundConfig, message: string, source = "天天基�
     estimatedChangePct: null,
     previousNav: null,
     officialNav: null,
+    officialChangePct: null,
     navDate: null,
     estimateTime: null,
     source,
@@ -47,6 +48,7 @@ function mockEstimate(fund: FundConfig, now: Date): FundEstimate {
     estimatedChangePct,
     previousNav: Math.round(previousNav * 10_000) / 10_000,
     officialNav: null,
+    officialChangePct: null,
     navDate: now.toISOString().slice(0, 10),
     estimateTime: now.toISOString(),
     source: "模拟数据",
@@ -63,6 +65,12 @@ function nullableNumber(value: unknown, field: string): number {
   const number = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(number)) throw new Error(`${field} 不是有效数字`);
   return number;
+}
+
+function optionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function normalizeEstimateTime(value: unknown): string {
@@ -163,7 +171,14 @@ export async function fetchLatestOfficialNavs(
     const navDate = typeof item.PDATE === "string" ? item.PDATE.trim().slice(0, 10) : "";
     if (!requestedCodes.has(code) || !/^\d{4}-\d{2}-\d{2}$/.test(navDate)) continue;
     try {
-      records.push({ code, officialNav: nullableNumber(item.NAV, "正式净值"), navDate });
+      const name = typeof item.SHORTNAME === "string" ? item.SHORTNAME.trim() : "";
+      records.push({
+        code,
+        name: name || code,
+        officialNav: nullableNumber(item.NAV, "正式净值"),
+        officialChangePct: optionalNumber(item.NAVCHGRT),
+        navDate,
+      });
     } catch {
       continue;
     }
@@ -364,6 +379,7 @@ export async function fetchFundEstimate(
       estimatedChangePct: nullableNumber(raw.gszzl, "估算涨幅"),
       previousNav: nullableNumber(raw.dwjz, "上一交易日净值"),
       officialNav: null,
+      officialChangePct: null,
       navDate: typeof raw.jzrq === "string" && raw.jzrq.trim() ? raw.jzrq.trim() : null,
       estimateTime: normalizeEstimateTime(raw.gztime),
       source: "天天基金估值接口",

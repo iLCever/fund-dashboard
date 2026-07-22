@@ -119,15 +119,20 @@ function mergeFailedFunds(current: FundEstimate[], previous: FundSnapshot | null
 
 async function buildFreshSnapshot(env: Env, now: Date): Promise<FundSnapshot> {
   console.log(JSON.stringify({ event: "fund_refresh_started", total: FUND_LIST.length, useMockData: parseBoolean(env.USE_MOCK_DATA, true) }));
-  const batch = await fetchFundEstimates(FUND_LIST, providerOptions(env, now));
-  const funds = sortFunds(batch.funds, categoryOrder());
+  const options = providerOptions(env, now);
+  const startedAt = Date.now();
+  const batch = options.useMockData
+    ? await fetchFundEstimates(FUND_LIST, options)
+    : { funds: FUND_LIST.map(officialNavPlaceholder), dataSource: "天天基金正式净值接口", durationMs: 0 };
+  const resolvedFunds = options.useMockData ? batch.funds : await enrichWithOfficialNav(batch.funds, env);
+  const funds = sortFunds(resolvedFunds, categoryOrder());
   const snapshot = createSnapshot(funds, batch.dataSource, toBeijingIso(now.getTime()));
   console.log(JSON.stringify({
     event: "fund_refresh_completed",
     total: snapshot.total,
     successCount: snapshot.successCount,
     failedCount: snapshot.failedCount,
-    providerDurationMs: batch.durationMs,
+    providerDurationMs: Date.now() - startedAt,
   }));
   return snapshot;
 }
@@ -241,7 +246,9 @@ function isOfficialNavBatchCache(value: unknown): value is OfficialNavBatchCache
     if (typeof fund !== "object" || fund === null) return false;
     const record = fund as Record<string, unknown>;
     return typeof record.code === "string" && /^\d{6}$/.test(record.code) &&
+      typeof record.name === "string" &&
       typeof record.officialNav === "number" && Number.isFinite(record.officialNav) &&
+      (record.officialChangePct === null || (typeof record.officialChangePct === "number" && Number.isFinite(record.officialChangePct))) &&
       typeof record.navDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(record.navDate);
   });
 }
@@ -299,12 +306,40 @@ async function enrichWithOfficialNav(funds: FundEstimate[], env: Env): Promise<F
     const official = byCode.get(fund.code);
     if (!official) return fund;
     const useOfficialDate = !fund.navDate || official.navDate >= fund.navDate;
+    const denominator = official.officialChangePct === null ? null : 1 + official.officialChangePct / 100;
+    const previousNav = denominator !== null && denominator > 0
+      ? Math.round((official.officialNav / denominator) * 10_000) / 10_000
+      : fund.previousNav;
     return {
       ...fund,
+      name: official.name || fund.name,
+      previousNav,
       officialNav: official.officialNav,
+      officialChangePct: official.officialChangePct,
       navDate: useOfficialDate ? official.navDate : fund.navDate,
+      source: "天天基金正式净值接口",
+      status: fund.status === "failed" ? "stale" : fund.status,
+      ...(fund.status === "failed" ? { error: "盘中估算已下线，当前显示最新正式净值" } : {}),
     };
   });
+}
+
+function officialNavPlaceholder(fund: { code: string; name: string; category: string }): FundEstimate {
+  return {
+    code: fund.code,
+    name: fund.name,
+    category: fund.category,
+    estimatedNav: null,
+    estimatedChangePct: null,
+    previousNav: null,
+    officialNav: null,
+    officialChangePct: null,
+    navDate: null,
+    estimateTime: null,
+    source: "天天基金正式净值接口",
+    status: "failed",
+    error: "正式净值暂不可用",
+  };
 }
 
 async function handleCustomFunds(request: Request, env: Env): Promise<Response> {
@@ -315,8 +350,9 @@ async function handleCustomFunds(request: Request, env: Env): Promise<Response> 
   if (codes.length === 0) return jsonResponse({ success: true, message: "ok", data: { funds: [] } });
   const funds = codes.map((code) => ({ code, name: code, category: "自定义" }));
   const options = providerOptions(env, new Date());
-  const batch = await fetchFundEstimates(funds, options);
-  const enrichedFunds = options.useMockData ? batch.funds : await enrichWithOfficialNav(batch.funds, env);
+  const enrichedFunds = options.useMockData
+    ? (await fetchFundEstimates(funds, options)).funds
+    : await enrichWithOfficialNav(funds.map(officialNavPlaceholder), env);
   return jsonResponse({ success: true, message: "ok", data: { funds: enrichedFunds } });
 }
 

@@ -35,8 +35,8 @@ export function sortFunds(funds: readonly FundEstimate[], categoryOrder: readonl
     const categoryDifference = categoryOrder.indexOf(left.category) - categoryOrder.indexOf(right.category);
     if (categoryDifference !== 0) return categoryDifference;
 
-    const leftValue = left.estimatedChangePct;
-    const rightValue = right.estimatedChangePct;
+    const leftValue = left.estimatedChangePct ?? left.officialChangePct;
+    const rightValue = right.estimatedChangePct ?? right.officialChangePct;
     if (leftValue === null && rightValue === null) return left.code.localeCompare(right.code);
     if (leftValue === null) return 1;
     if (rightValue === null) return -1;
@@ -115,6 +115,7 @@ export function isFundSnapshot(value: unknown): value is FundSnapshot {
       (fund.estimatedChangePct === null || typeof fund.estimatedChangePct === "number") &&
       (fund.previousNav === null || typeof fund.previousNav === "number") &&
       (fund.officialNav === null || typeof fund.officialNav === "number") &&
+      (fund.officialChangePct === null || typeof fund.officialChangePct === "number") &&
       (fund.navDate === null || typeof fund.navDate === "string") &&
       (fund.estimateTime === null || typeof fund.estimateTime === "string") &&
       typeof fund.source === "string" &&

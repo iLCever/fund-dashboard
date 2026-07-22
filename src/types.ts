@@ -12,6 +12,7 @@ export interface FundEstimate {
   estimatedChangePct: number | null;
   previousNav: number | null;
   officialNav: number | null;
+  officialChangePct: number | null;
   navDate: string | null;
   estimateTime: string | null;
   source: string;

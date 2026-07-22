@@ -27,6 +27,7 @@ export interface EastmoneyOfficialNavItem {
   SHORTNAME?: unknown;
   PDATE?: unknown;
   NAV?: unknown;
+  NAVCHGRT?: unknown;
 }
 
 export interface EastmoneyOfficialNavResponse {
@@ -36,7 +37,9 @@ export interface EastmoneyOfficialNavResponse {
 
 export interface OfficialNavRecord {
   code: string;
+  name: string;
   officialNav: number;
+  officialChangePct: number | null;
   navDate: string;
 }
 
