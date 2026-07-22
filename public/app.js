@@ -27,11 +27,10 @@ function readSavedFunds() {
     parsed.forEach((fund) => {
       if (/^\d{6}$/.test(fund?.code)) {
         const name = typeof fund.name === "string" ? fund.name : "";
-        const savedCategory = typeof fund.category === "string" ? fund.category.trim() : "";
         unique.set(fund.code, {
           code: fund.code,
           name,
-          category: savedCategory && savedCategory !== "识别中" ? savedCategory : (name ? inferFundCategory(name) : "识别中"),
+          category: name ? inferFundCategory(name) : "识别中",
         });
       }
     });
@@ -57,7 +56,7 @@ function readCachedSnapshot(savedFunds) {
       return [{
         code: saved.code,
         name: saved.name || fund.name || saved.code,
-        category: saved.category,
+        category: inferFundCategory(saved.name || fund.name || ""),
         estimatedNav: numberOrNull(fund.estimatedNav),
         estimatedChangePct: numberOrNull(fund.estimatedChangePct),
         previousNav: numberOrNull(fund.previousNav),
@@ -407,7 +406,7 @@ async function loadFunds({ background = false } = {}) {
       const estimate = estimatesByCode.get(saved.code);
       if (!estimate) return { ...saved, name: saved.name || saved.code, estimatedNav: null, estimatedChangePct: null, previousNav: null, officialNav: null, officialChangePct: null, navDate: null, estimateTime: null, source: "--", status: "failed", error: "数据获取失败" };
       const name = estimate.name && estimate.name !== saved.code ? estimate.name : (saved.name || saved.code);
-      const category = saved.category && saved.category !== "识别中" ? saved.category : inferFundCategory(name);
+      const category = inferFundCategory(name);
       if (saved.name !== name || saved.category !== category) {
         saved.name = name;
         saved.category = category;
