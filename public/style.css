@@ -72,8 +72,8 @@ h1 { margin: 0 0 5px; font-size: clamp(1.55rem, 5vw, 2.1rem); letter-spacing: -.
 .fund-main-row td { color: var(--text-soft); font-size: .78rem; }
 .fund-main-row td:nth-child(2), .fund-main-row td:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
 .fund-identity { min-width: 0; }
-.fund-name-line { display: flex; min-width: 0; align-items: center; gap: 6px; }
-.fund-name { display: block; min-width: 0; overflow: hidden; color: var(--text); font-size: .8rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.fund-name-line { display: flex; min-width: 0; align-items: flex-start; gap: 6px; }
+.fund-name { display: block; flex: 1 1 auto; min-width: 0; color: var(--text); font-size: .8rem; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; white-space: normal; }
 .nav-updated-badge { flex: 0 0 auto; padding: 2px 5px; border: 1px solid #55e2ae66; border-radius: 5px; background: #123f36; color: #69efbd; font-size: .6rem; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .fund-meta { display: block; margin-top: 2px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .66rem; }
 .change-cell { text-align: right; }
